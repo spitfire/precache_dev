@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.github.krypted.precache</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/bin/python</string>
+		<string>/usr/local/bin/precache.py</string>
+		<string>-m</string>
+		<string>iPhone8,2</string>
+		<string>iPad6,7</string>
+		<string>Pages</string>
+		<string>OSXUpdCombo10.11.6</string>
+		<string>--cache-group</string>
+		<string>updates</string>
+		<string>installer</string>
+	</array>
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict>
+			<key>Hour</key>
+			<integer>19</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+			<key>Weekday</key>
+			<integer>3</integer>
+		</dict>
+	</array>
+</dict>
+</plist>
