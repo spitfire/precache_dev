@@ -16,3 +16,16 @@ First, you'll need to clone the repo _somewhere_.
 1. `cd` into the location you wish to use this from, for example: `cd /usr/local/bin`
 2. `git clone https://github.com/carlashley/precache_dev`
 3. `cd precache_dev && chmod +x precache.py`
+4. `./precache.py` for the help output, `./precache.py -l` for the list of updates available.
+
+## Configuration file
+`precache.py` can be configured using a configuration profile, a template (`com.github.krypted.precache.example-config.plist`) exists which can be copied and then modified to suit your needs. This is handy for circumstances where you wish to run this as a LaunchDaemon, or the items to be cached rarely change.
+
+Copy the existing `com.github.krypted.precache.example-config.plist` and rename it to `com.github.krypted.precache.my-config.plist`.
+
+Modify relevant settings in the file with your favourite text editor. Do not use `defaults write` on this file as it will convert it to a binary plist, which is not readable by `precache.py`
+
+### User configurable options
+|Preference Key|Type|Value|
+|--------------|----|Value|
+|``cacheApps`|List|Any app or macOS installer as per the `precache.py -l` output|
