@@ -26,6 +26,9 @@ Copy the existing `com.github.krypted.precache.example-config.plist` and rename 
 Modify relevant settings in the file with your favourite text editor. Do not use `defaults write` on this file as it will convert it to a binary plist, which is not readable by `precache.py`
 
 ### User configurable options
-|Preference Key|Type|Value|
-|--------------|----|Value|
-|``cacheApps`|List|Any app or macOS installer as per the `precache.py -l` output|
+| Preference Key | Type | Value |
+| -------------- | ---- | ----- |
+| `cacheApps` | List | Any app or macOS installer as per the `precache.py -l` output |
+| `cacheGroups | List | Any from `'AppleTV', 'iPad', 'iPhone', 'iPod', 'app', 'installer', 'sucatalog'` |
+| `cacheIPSW` | List | Any valid Apple model identier for Apple TV, iPad, iPhone, or iPod. In the format `iPad6,8`. To cache all IPSW files for a specifc device, simply use the model identifier without the numbers, for example: `iPad` |
+| `cacheMacUpdates` | List | Any valid product ID or keyword from the `precache.py -l` output. |
