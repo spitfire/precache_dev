@@ -1,6 +1,8 @@
 #!/usr/bin/python
+import argparse
 import base64
 import collections
+import hashlib
 import json
 import os
 import subprocess
@@ -17,6 +19,7 @@ from time import sleep
 from urlparse import urljoin
 from urlparse import urlparse
 
+script_name = 'precache.py'
 __author__ = 'Charles Edge and Carl Windus'
 __copyright__ = 'Copyright 2016, Charles Edge, Carl Windus'
 __version__ = '2.0.0'
@@ -24,11 +27,11 @@ __date__ = '2017-04-06'
 
 __license__ = 'Apache License, Version 2.0'
 __maintainer__ = 'Carl Windus: https://github.com/carlashley/precache_dev'
-__status__ = 'Testing'
+__status__ = 'development'
 
 
 class PreCache():
-    def __init__(self, server=None, dry_run=True):
+    def __init__(self, server=None, destination=None, dry_run=True):
         '''Initialises the class with supplied arguments, and loads
         configuration information if present in the config plist.'''
         # Configuration variables
@@ -37,6 +40,15 @@ class PreCache():
         # to point to the right file.
         self.configuration = self.load_config('com.github.krypted.precache.example-config.plist')  # NOQA
         self.dry_run = dry_run
+
+        # Storage destination for downloaded items
+        if destination:
+            self.destination = destination
+        else:
+            try:
+                self.destination = self.configuration['destination']
+            except:
+                self.destination = '/tmp'
 
         try:
             self.user_agent = configuration['userAgentString']  # NOQA
@@ -58,9 +70,7 @@ class PreCache():
         self.sucatalog = urljoin(self.configuration['swuBaseURL'], self.configuration['softwareUpdateFeed']['all'])  # NOQA
         # self.sucatalog = urljoin(self.configuration['swuBaseURL'], self.configuration['softwareUpdateFeed']['sierra'])  # NOQA
 
-        # Asset group/model types
-        self.asset_groups = ['AppleTV', 'iPad', 'iPhone', 'iPod', 'Watch', 'app', 'installer', 'sucatalog']  # NOQA
-
+        # iOS Devices
         self.ios_devices = ['iPad', 'iPhone', 'iPod']
 
         # Source URLs that apple uses
@@ -73,7 +83,8 @@ class PreCache():
                                                       'group',
                                                       'product_id',
                                                       'product_title',
-                                                      'release_date'])
+                                                      'release_date',
+                                                      'sha_digest'])
 
     def already_cached(self, asset_url):
         '''Checks if an item is already cached. This is indicated in the
@@ -107,13 +118,13 @@ class PreCache():
             asset = self.asset(
                 model=self.mac_model,
                 version=apps[item]['version'],
-                urls=[apps[item]['url']],
+                urls=[self.reformat_url(apps[item]['url'])],
                 group=apps[item]['type'],
                 product_title=item,
             )
             yield asset
 
-    def asset(self, model=None, model_description=None, version=None, urls=None, group=None, product_id=None, product_title=None, release_date=None):  # NOQA
+    def asset(self, model=None, model_description=None, version=None, urls=None, group=None, product_id=None, product_title=None, release_date=None, sha_digest=None):  # NOQA
         return self.Asset(
             model=model,
             model_description=model_description,
@@ -122,7 +133,8 @@ class PreCache():
             group=group,
             product_id=product_id,
             product_title=product_title,
-            release_date=release_date
+            release_date=release_date,
+            sha_digest=sha_digest
         )
 
     def cache_server(self):
@@ -174,35 +186,68 @@ class PreCache():
         except:
             raise
 
+    # Compare two digests
+    def compare_digests(self, digest_a, digest_b):
+        if digest_a == digest_b:
+            return True
+        else:
+            return False
+
     def correct_package_filename(self, package_filename):
         '''Returns the correct package filename for display purposes only'''
         for source in self.apple_sources:
             if source in package_filename:
                 return package_filename.replace('?source=%s' % source, '')
 
-    def download(self, url, destination=None):
+    def download(self, url):
         '''Downloads the specified file using the curl binary.'''
-        if not destination:
-            destination = '/tmp'
+        # Change destination for package files to /tmp so we don't clutter
+        # ipsw destination
+        if '.pkg' in url:
+            self.destination = '/tmp'
 
         # Basename the URL for curl file output
-        output_file = os.path.join(destination, self.correct_package_filename(os.path.basename(url)))  # NOQA
+        output_file = os.path.join(self.destination, self.correct_package_filename(os.path.basename(url)))  # NOQA
 
         # curl called with minimal progress bar, and create directories if they
         # don't exist, as well as provide a user agent string.
         cmd = ['/usr/bin/curl', '--progress-bar', url, '-o', output_file, '--create-dirs', '--user-agent', self.user_agent]  # NOQA
-        subprocess.check_call(cmd)
+
+        if self.dry_run:
+            print cmd
+        else:
+            subprocess.check_call(cmd)
 
         # Because curl doesn't like /dev/null as a file path, delete items
         # downloaded if they're not IPSW files. Don't use shutil becase we only
         # want to remove the file, not the complete path!
-        if not output_file.endswith(('ipsw', '.plist', '.sucatalog', '.xml')):  # NOQA
+        if not output_file.endswith('.ipsw'):  # NOQA
             try:
                 os.remove(output_file)
             except:
                 raise
 
         sleep(uniform(1, 2))
+
+    # Build digest for a specific file
+    def file_digest(self, file_path, digest_type=None):
+        '''Creates a digest based on the digest_type argument.
+        digest_type defaults to SHA256.'''
+        valid_digests = ['md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512']
+        block_size = 65536
+
+        if not digest_type:
+            digest_type = 'sha256'
+
+        if digest_type in valid_digests:
+            h = hashlib.new(digest_type)
+            with open(file_path, 'rb') as f:
+                for block in iter(lambda: f.read(block_size), b''):
+                    h.update(block)
+                return h.hexdigest()
+        else:
+            raise Exception('%s not a valid digest - choose from %s' %
+                            (digest_type, valid_digests))
 
     def hardware_model(self):
         '''Returns the hardware model of the Mac being used. This is used for
@@ -428,6 +473,15 @@ class PreCache():
         # to process compared to the sucatalog for macOS
         updates.extend(self.ios_updates(iOS=True, watchOS=True, tvOS=True))
 
+        # This is to handle instances where downloading a number of IPSW's
+        # for a specific set of models might be required.
+        ipsw_capable = ['AppleTV', 'iPad', 'iPhone', 'iPod']
+        ipsw_model_list = []
+        for item in updates:
+            if any(i in item.model for i in ipsw_capable) and item.model not in ipsw_model_list:  # NOQA
+                ipsw_model_list.append(item.model)
+        ipsw_model_list.sort()
+
         # Because processing software updates can take a while, only do this if
         # the sucatalog exists in groups or if software_updates exists
         if (groups and 'sucatalog' in groups) or mac_updates:  # NOQA
@@ -440,32 +494,79 @@ class PreCache():
         # Sort by model
         updates = sorted(updates, key=attrgetter('model'))
 
+        # Test if IPSW's have numbers
+        def has_digits(string):
+            return any(char.isdigit() for char in string)
+
         # Process IPSW's if requested
         if ipsw:
-            for item in ipsw:
-                _ipsw = self.request_ipsw(item)
-                if _ipsw not in updates:
-                    updates.extend(_ipsw)
+            if not any(has_digits(item) for item in ipsw):
+                for model in ipsw_model_list:
+                    _ipsw = self.request_ipsw(model)
+                    if _ipsw not in updates:
+                        updates.extend(_ipsw)
+            else:
+                for item in ipsw:
+                    if item in ipsw_model_list:
+                        _ipsw = self.request_ipsw(item)
+                        if _ipsw not in updates:
+                            updates.extend(_ipsw)
+                    else:
+                        print '%s is not a valid model. Pick from %s' % (item, ipsw_model_list)  # NOQA
 
         def cache(item):
             for url in item.urls:
-                if not self.already_cached(url):
-                    if any(group in item.group for group in ['app', 'installer']):  # NOQA
-                        caching_text = '%s %s (%s)' % (item.product_title, item.version, item.group)  # NOQA
-                    elif 'sucatalog' in item.group:
-                        caching_text = '%s: %s - %s' % (item.product_id, item.product_title, self.correct_package_filename(os.path.basename(url)))  # NOQA
+                # Text that will be displayed in output
+                if any(group in item.group for group in ['app', 'installer']):  # NOQA
+                    caching_text = '%s %s (%s)' % (item.product_title, item.version, item.group)  # NOQA
+                elif 'sucatalog' in item.group:
+                    caching_text = '%s: %s - %s' % (item.product_id, item.product_title, self.correct_package_filename(os.path.basename(url)))  # NOQA
+                else:
+                    if item.model_description:
+                        caching_text = '%s: %s - %s' % (item.model, item.model_description, item.product_title)  # NOQA
                     else:
-                        if item.model_description:
-                            caching_text = '%s: %s - %s' % (item.model, item.model_description, item.product_title)  # NOQA
-                        else:
-                            caching_text = '%s: %s' % (item.model, item.product_title)  # NOQA
+                        caching_text = '%s: %s' % (item.model, item.product_title)  # NOQA
 
+                # Output filename for IPSW's
+                output_file = os.path.join(self.destination, self.correct_package_filename(os.path.basename(url)))  # NOQA
+
+                # Normal 'pkg' files get processed by this bracket
+                if not self.already_cached(url):  # NOQA
                     if self.dry_run:
-                        print 'Caching: %s' % caching_text
+                        print 'Cache: %s' % caching_text
                     else:
+                        print 'Caching: %s' % caching_text
                         self.download(url)
                 else:
                     print 'Already cached: %s' % caching_text
+
+                # IPSW files are a little differnt. They may already be
+                # cached, but may still need to be re-downloaded.
+                if output_file.endswith('.ipsw'):
+                    if not self.already_cached(url):
+                        dry_download_text = 'Cache'
+                        download_text = 'Caching'
+                    else:
+                        dry_download_text = 'Re-download'
+                        download_text = 'Re-downloading'
+
+                    if os.path.exists(output_file) and item.sha_digest:
+                        print 'A file already exists, comparing digest for %s' % caching_text  # NOQA
+                        # SHA1 or MD5 digest for ipsw files
+                        if self.compare_digests(self.file_digest(output_file, digest_type='sha1'), item.sha_digest):  # NOQA
+                            print 'Skipping: %s' % caching_text
+                        else:
+                            if self.dry_run:
+                                print '%s: %s' % (dry_download_text, caching_text)  # NOQA
+                            else:
+                                print '%s: %s' % (download_text, caching_text)
+                                self.download(url)
+                    elif not os.path.exists(output_file):
+                        if self.dry_run:
+                            print '%s: %s' % (dry_download_text, caching_text)
+                        else:
+                            print '%s: %s' % (download_text, caching_text)
+                            self.download(url)
 
         # Iterate the updates and do the thing!
         # This particular approach is used to avoid duplicating downloads where
@@ -476,7 +577,7 @@ class PreCache():
                     cache(update)
 
             if ipsw and update.group == 'ipsw':
-                if any(item in update for item in ipsw):
+                if any(item in update.model for item in ipsw):
                     cache(update)
 
             if groups:
@@ -509,31 +610,36 @@ class PreCache():
         version of the IPSW.'''
         if 'Watch' not in device_model:
             url = 'https://api.ipsw.me/v2.1/%s/latest/info.json' % device_model
-            ipsw_json = json.loads(self.request_url(url).read())[0]
-            # ipsw_url = self.request_url('https://api.ipsw.me/v2.1/%s/latest/url' % device_model).read()  # NOQA
-            # ipsw_ver = self.request_url('https://api.ipsw.me/v2.1/%s/latest/version' % device_model).read()  # NOQA
-            # ipsw_build = self.request_url('https://api.ipsw.me/v2.1/%s/latest/buildid' % device_model).read()  # NOQA
-            # ipsw_release_date = self.request_url('https://api.ipsw.me/v2.1/%s/latest/releasedate' % device_model).read()  # NOQA
+            try:
+                ipsw_json = json.loads(self.request_url(url).read())[0]
 
-            # Fix title prefix for the product_title attribute
-            if any(device in device_model for device in self.ios_devices):  # NOQA
-                prefix = 'iOS'
-            elif 'Watch' in device_model:
-                prefix = 'watchOS'
-            elif 'TV' in device_model:
-                prefix = 'tvOS'
+                try:
+                    rel_date = ipsw_json['releasedate']
+                except:
+                    rel_date = ipsw_json['uploaddate']
 
-            asset = self.asset(
-                model=device_model,
-                model_description=ipsw_json['device'],
-                version=ipsw_json['version'],
-                urls=[ipsw_json['url']],
-                group='ipsw',
-                product_title='%s %s build %s (ipsw)' % (prefix, ipsw_json['version'], ipsw_json['buildid']),  # NOQA
-                release_date=ipsw_json['releasedate']
-            )
+                # Fix title prefix for the product_title attribute
+                if any(device in device_model for device in self.ios_devices):  # NOQA
+                    prefix = 'iOS'
+                elif 'Watch' in device_model:
+                    prefix = 'watchOS'
+                elif 'TV' in device_model:
+                    prefix = 'tvOS'
 
-            yield asset
+                asset = self.asset(
+                    model=device_model,
+                    model_description=ipsw_json['device'],
+                    version=ipsw_json['version'],
+                    urls=[self.reformat_url(ipsw_json['url'])],
+                    group='ipsw',
+                    product_title='%s %s build %s (ipsw)' % (prefix, ipsw_json['version'], ipsw_json['buildid']),  # NOQA
+                    release_date=rel_date,
+                    sha_digest=ipsw_json['sha1sum']
+                )
+
+                yield asset
+            except:
+                pass
 
     def request_url(self, url):
         '''Attempts a request to a specific URL'''
@@ -688,3 +794,156 @@ class PreCache():
             return cache_server
         else:
             raise Exception('Invalid Caching Server URL: %s' % cache_server)  # NOQA
+
+
+# Main
+def main():
+    # Version info
+    version = '%s (%s) version %s, updated on %s. %s' % (script_name, __status__,  __version__, __date__, __license__)  # NOQA
+
+    # Class for tidier help output
+    class SaneUsageFormat(argparse.HelpFormatter):
+        '''
+        Matt Wilkie on SO
+        http://stackoverflow.com/questions/9642692/argparse-help-without-duplicate-allcaps/9643162#9643162
+        '''
+        def _format_action_invocation(self, action):
+            if not action.option_strings:
+                default = self._get_default_metavar_for_positional(action)
+                metavar, = self._metavar_formatter(action, default)(1)
+                return metavar
+
+            else:
+                parts = []
+
+                # if the Optional doesn't take a value, format is:
+                #    -s, --long
+                if action.nargs == 0:
+                    parts.extend(action.option_strings)
+
+                # if the Optional takes a value, format is:
+                #    -s ARGS, --long ARGS
+                else:
+                    default = self._get_default_metavar_for_optional(action)
+                    args_string = self._format_args(action, default)
+                    for option_string in action.option_strings:
+                        parts.append(option_string)
+
+                    return '%s %s' % (', '.join(parts), args_string)
+
+                return ', '.join(parts)
+
+        def _get_default_metavar_for_optional(self, action):
+            return action.dest.upper()
+
+    parser = argparse.ArgumentParser(formatter_class=SaneUsageFormat)
+
+    # Used in the choices options for groups to cache
+    asset_groups = ['AppleTV', 'iPad', 'iPhone', 'iPod', 'Watch', 'app', 'installer', 'sucatalog']  # NOQA
+
+    # All the args!
+    parser.add_argument('--cache-group',
+                        type=str,
+                        nargs='+',
+                        dest='cache_group',
+                        choices=(asset_groups),
+                        metavar='<product name>',
+                        help='Cache assets based on group',
+                        required=False)
+
+    parser.add_argument('-cs', '--cache-server',
+                        type=str,
+                        nargs=1,
+                        dest='cache_server',
+                        metavar='http://cacheserver:port',
+                        help='Specify the cache server to use.',
+                        required=False)
+
+    parser.add_argument('-d', '--destination',
+                        type=str,
+                        nargs=1,
+                        dest='output_dir',
+                        metavar='file path',
+                        help='Path to save IPSW files to.',
+                        required=False)
+
+    parser.add_argument('-i', '--ipsw',
+                        type=str,
+                        nargs='+',
+                        dest='ipsw_model',
+                        metavar='model',
+                        help='Cache IPSW for provided model/s.',
+                        required=False)
+
+    parser.add_argument('--jamfserver',
+                        type=str,
+                        dest='jamfserver',
+                        help='Jamf server address',
+                        required=False)
+
+    parser.add_argument('--jamfuser',
+                        type=str,
+                        dest='jamfuser',
+                        help='Jamf server username',
+                        required=False)
+
+    parser.add_argument('--jamfpassword',
+                        type=str,
+                        dest='jamfpassword',
+                        help='Jamf server password',
+                        required=False)
+
+    parser.add_argument('-l', '--list',
+                        action='store_true',
+                        dest='list_models',
+                        help='Lists all assets available for caching.',
+                        required=False)
+
+    parser.add_argument('-m', '--model',
+                        type=str,
+                        nargs='+',
+                        dest='model',
+                        metavar='model',
+                        help='Provide model(s)/app(s), i.e iPhone8,2 Xcode.',
+                        required=False)
+
+    parser.add_argument('-n', '--dry-run',
+                        action='store_true',
+                        dest='dry_run',
+                        help='Shows what would be cached.',
+                        required=False)
+
+    parser.add_argument('--version',
+                        action='store_true',
+                        dest='ver',
+                        help='Version info.',
+                        required=False)
+
+    # Process arguments
+    args = parser.parse_args()
+
+    # Do the tango, or the waltz. Whatever. Just do it!
+    if len(sys.argv) > 1:
+        if args.ver:
+            print '%s' % version
+            sys.exit(0)
+
+        # This deals with "mutually exclusive" arguments better than argparse
+        if args.list_models and (args.model or args.ipsw_model or args.ver or args.cache_group or args.jamfserver or args.jamfuser or args.jamfpassword):  # NOQA
+            print 'Cannot combine these arguments with -l,--list'
+            sys.exit(1)
+        else:
+            if args.list_models:
+                p = PreCache(dry_run=True)
+                p.list_assets(verbose=True)
+            else:
+                if args.ipsw_model:
+                    _ipsw_models = args.ipsw_model
+
+                p = PreCache(dry_run=True)
+                p.main_processor(ipsw=_ipsw_models)
+
+
+# Run main()
+if __name__ == '__main__':
+    main()
