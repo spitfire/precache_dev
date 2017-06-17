@@ -4,12 +4,33 @@
 <dict>
 	<key>appsCanCache</key>
 	<string>https://raw.githubusercontent.com/krypted/precache/master/com.github.krypted.precache.apps-list.plist</string>
+	<key>cacheApps</key>
+	<array>
+		<string>Server</string>
+		<string>Sierra</string>
+	</array>
+	<key>cacheGroups</key>
+	<array>
+	</array>
+	<key>cacheIPSW</key>
+	<array>
+		<string>iPad6,8</string>
+	</array>
+	<key>cacheMacUpdates</key>
+	<array>
+	</array>
+	<key>cacheModels</key>
+	<array>
+		<string>AppleTV5,3</string>
+	</array>
 	<key>cacheServerConfigPlist</key>
 	<string>/Library/Server/Caching/Config/Config.plist</string>
 	<key>cacheServerPort</key>
 	<string>49672</string>
 	<key>cacheServerURL</key>
 	<string>http://thor</string>
+	<key>destination</key>
+	<string>/tmp</string>
 	<key>iosBaseURL</key>
 	<string>http://mesu.apple.com/assets/</string>
 	<key>iosFeeds</key>
@@ -21,18 +42,20 @@
 		<key>watch</key>
 		<string>watch/com_apple_MobileAsset_SoftwareUpdate/com_apple_MobileAsset_SoftwareUpdate.xml</string>
 	</dict>
-	<key>jamfPassword</key>
-	<string>aPassword</string>
-	<key>jamfServer</key>
-	<string>foo.example.org:9000</string>
-	<key>jamfUser</key>
-	<string>aUser</string>
 	<key>logLevel</key>
 	<string>debug</string>
 	<key>logPath</key>
 	<string>/tmp/precache.log</string>
 	<key>masBaseURL</key>
 	<string>http://osxapps.itunes.apple.com/</string>
+	<key>mdmPassword</key>
+	<string>aPassword</string>
+	<key>mdmServer</key>
+	<string>foo.example.org:9000</string>
+	<key>mdmToken</key>
+	<string>05cf21d7f2adaf6793b9063e8e58d0ce3e21411e4f54fc79f6470d90a27a4609</string>
+	<key>mdmUser</key>
+	<string>aUser</string>
 	<key>softwareUpdateFeed</key>
 	<dict>
 		<key>all</key>

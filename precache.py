@@ -23,7 +23,7 @@ script_name = 'precache.py'
 __author__ = 'Charles Edge and Carl Windus'
 __copyright__ = 'Copyright 2016, Charles Edge, Carl Windus'
 __version__ = '2.0.0'
-__date__ = '2017-04-06'
+__date__ = '2017-06-17'
 
 __license__ = 'Apache License, Version 2.0'
 __maintainer__ = 'Carl Windus: https://github.com/carlashley/precache_dev'
@@ -31,15 +31,26 @@ __status__ = 'development'
 
 
 class PreCache():
-    def __init__(self, server=None, destination=None, dry_run=True):
+    def __init__(self, server=None, destination=None, dry_run=None):
         '''Initialises the class with supplied arguments, and loads
         configuration information if present in the config plist.'''
         # Configuration variables
         # This is an example configuration file, please copy this plist and
         # modify it with your own configuration data, and update this variable
         # to point to the right file.
-        self.configuration = self.load_config('com.github.krypted.precache.example-config.plist')  # NOQA
-        self.dry_run = dry_run
+        try:
+            self.configuration = self.load_config('com.github.krypted.precache.my-config.plist')  # NOQA
+        except:
+            try:
+                self.configuration = self.load_config('com.github.krypted.precache.example-config.plist')  # NOQA
+            except:
+                print 'No configuration file found. Please create one using ./make_config.py'  # NOQA
+                sys.exit(1)
+
+        if dry_run:
+            self.dry_run = dry_run
+        else:
+            self.dry_run = False
 
         # Storage destination for downloaded items
         if destination:
@@ -1064,6 +1075,11 @@ def main():
                 else:
                     _groups = None
 
+                if args.dry_run:
+                    _dry_run = True
+                else:
+                    _dry_run = False
+
                 if args.ipsw_model:
                     _ipsw_models = args.ipsw_model
                 else:
@@ -1074,32 +1090,30 @@ def main():
                 else:
                     _mac_updates = None
 
-                if args.models:
-                    # If any details have been provided
-                    try:
-                        if args.mdm_server:
-                            _mdm_server = args.mdm_server[0]
-                        else:
-                            _mdm_server = None
-
-                        if args.mdm_server:
-                            _mdm_user = args.mdm_user[0]
-                        else:
-                            _mdm_user = None
-
-                        if args.mdm_password:
-                            _mdm_pass = args.mdm_password[0]
-                        else:
-                            _mdm_pass = None
-
-                        _models = p.mdm_models(mdm_server=_mdm_server, mdm_user=_mdm_user, mdm_pass=_mdm_pass)  # NOQA
-                    except:
-                        # Fall back to models provided in argument. Note that using MDM lookup of models excludes all models supplied at the command line.  # NOQA
-                        _models = args.models
+                if args.models and not args.mdm_server:
+                    _models = args.models
                 else:
                     _models = None
 
-                p = PreCache(server=_cache_server, destination=_destination, dry_run=True)  # NOQA
+                # If any details have been provided
+                if not args.models and args.mdm_server:
+                    _mdm_server = args.mdm_server[0]
+
+                    if args.mdm_user:
+                        _mdm_user = args.mdm_user[0]
+                    else:
+                        _mdm_user = None
+
+                    if args.mdm_password:
+                        _mdm_pass = args.mdm_password[0]
+                    else:
+                        _mdm_pass = None
+
+                    _models = p.mdm_models(mdm_server=_mdm_server, mdm_user=_mdm_user, mdm_pass=_mdm_pass)  # NOQA
+                else:
+                    _models = None
+
+                p = PreCache(server=_cache_server, destination=_destination, dry_run=_dry_run)  # NOQA
                 p.main_processor(apps=_apps, groups=_groups, ipsw=_ipsw_models, mac_updates=_mac_updates, models=_models)  # NOQA
 
 

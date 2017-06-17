@@ -29,6 +29,39 @@ Modify relevant settings in the file with your favourite text editor. Do not use
 | Preference Key | Type | Value |
 | -------------- | ---- | ----- |
 | `cacheApps` | List | Any app or macOS installer as per the `precache.py -l` output |
-| `cacheGroups | List | Any from `'AppleTV', 'iPad', 'iPhone', 'iPod', 'app', 'installer', 'sucatalog'` |
+| `cacheGroups` | List | Any from `'AppleTV', 'iPad', 'iPhone', 'iPod', 'app', 'installer', 'sucatalog'` |
 | `cacheIPSW` | List | Any valid Apple model identier for Apple TV, iPad, iPhone, or iPod. In the format `iPad6,8`. To cache all IPSW files for a specifc device, simply use the model identifier without the numbers, for example: `iPad` |
 | `cacheMacUpdates` | List | Any valid product ID or keyword from the `precache.py -l` output. |
+| `cacheModels` | List | Any valid model identifier in the format `iPad6,8`. |
+| `cacheServerPort` | Integer | The port number your cache server responds on. See note on finding the server port and address. |
+| `cacheServerURL` | String | The IP address or URL of your caching server. Must include `http://`. See note on finding the server port and address. |
+| `destination` | String | A folder in your local storage where you want IPSW files to be stored to. Defaults to `/tmp` of nothing is provided. |
+| `mdmPassword` | String | The password used for your MDM server. Please see support note below. |
+| `mdmServer` | String | The MDM server address. In the format `foo.example.org`. If your MDM server uses a specific port, in the format of `foo.example.org:8443` Please see support note below. |
+| `mdmToken` | String | Currently unsupported. |
+| `mdmUser` | String | The username used for your MDM server. Please see support note below. |
+
+#### Finding your server port and address
+If `/usr/bin/AssetCacheLocatorUtil` exists on your computer and no server information exists in the configuration files, or provided at the command line, `.precache.py` will attempt to find the right caching server.
+
+#### Manually finding your server port and address
+If you are running macOS Sierra or later, you can find the server your machine uses by running `/usr/bin/AssetCacheLocatorUtil 2>&1 | awk '/rank 1/ {print $4 $5}' | sed 's/,rank//g' | uniq`.
+
+If you get more than one server list back, select the one that you wish to run `precache.py` against.
+
+If you are using macOS Server.app you can also get the information for that server by running `sudo serveradmin fullstatus caching` on the caching server.
+
+#### MDM support
+iOS and tvOS model information can be retrieved from an MDM. Presently only Jamf Cloud/JSS instances are supported.
+
+You can configure the credentials and server in the configuration file as outlined in the User configurable options section above, or provide them from the command line.
+
+Any models supplied with the `-m,--models` argument are ignored when MDM arguments are used.
+
+## Running `precache.py` as a LaunchDaemon
+To run `precache.py` as a LaunchDaemon, you can do the following:
+1. Make a copy of the configuration file as per steps outlined in the `Configuration File` section.
+2. Make changes to the configuration file as per the `User configuration options`.
+3. Copy `com.github.krypted.precache.daemon.plist` to `/Library/LaunchDaemons` and make sure ownership and permissions are correct by running `chmod 644 /Library/LaunchDaemons/com.github.krypted.precache.daemon.plist && chown root:wheel /Library/LaunchDaemons/com.github.krypted.precache.daemon.plist`
+4. If you wish to modify the day(s) or time that the daemon runs at, modify the `/Library/LaunchDaemons/com.github.krypted.precache.daemon.plist` file.
+5. Run `/bin/launchctl load /Libary/LaunchDaemons/com.github.krypted.precache.daemon.plist`
