@@ -63,7 +63,9 @@ class PreCache():
                 self.server = self.valid_server('%s:%s' % (self.configuration['cacheServerURL'], self.configuration['cacheServerPort']))  # NOQA
             except:
                 self.server = self.valid_server(self.cache_server())
-        self.write_out('Locating caching/tetherator server %s' % self.server)
+
+        # Update location and destination.
+        self.write_out('Locating caching/tetherator server %s. Destination: %s' % (self.server, self.destination))  # NOQA
         print ''
 
         self.mac_model = self.hardware_model()
@@ -72,6 +74,12 @@ class PreCache():
 
         # iOS Devices
         self.ios_devices = ['iPad', 'iPhone', 'iPod']
+
+        # Asset groups
+        self.asset_groups = ['AppleTV', 'iPad', 'iPhone', 'iPod', 'app', 'installer', 'sucatalog']  # NOQA
+
+        # Models that have ipsw files downloadable from Apple
+        self.ipsw_capable = ['AppleTV', 'iPad', 'iPhone', 'iPod']
 
         # Source URLs that apple uses
         self.apple_sources = ['appldnld.apple.com', 'mesu.apple.com', 'osxapps.itunes.apple.com', 'swcdn.apple.com', 'swscan.apple.com']  # NOQA
@@ -466,6 +474,7 @@ class PreCache():
     def main_processor(self, apps=None, groups=None, ipsw=None, mac_updates=None, models=None):  # NOQA
         '''Main processor that handles figuring out whether an item should be
         downloaded or not'''
+        print 'Building and processing items to cache can take a few minutes. Please be patient.'  # NOQA
         # Creating an empty list for updates to exist in for processing
         updates = []
 
@@ -475,10 +484,9 @@ class PreCache():
 
         # This is to handle instances where downloading a number of IPSW's
         # for a specific set of models might be required.
-        ipsw_capable = ['AppleTV', 'iPad', 'iPhone', 'iPod']
         ipsw_model_list = []
         for item in updates:
-            if any(i in item.model for i in ipsw_capable) and item.model not in ipsw_model_list:  # NOQA
+            if any(i in item.model for i in self.ipsw_capable) and item.model not in ipsw_model_list:  # NOQA
                 ipsw_model_list.append(item.model)
         ipsw_model_list.sort()
 
@@ -488,7 +496,7 @@ class PreCache():
             updates.extend(self.software_updates())
 
         # Handle cacheable apps or macOS Installers
-        if (groups and any(group in groups for group in ['app', 'installer'])) or apps:  # NOQA
+        if (groups and any(group in groups for group in self.asset_groups)) or apps:  # NOQA
             updates.extend(self.app_updates())
 
         # Sort by model
@@ -498,13 +506,17 @@ class PreCache():
         def has_digits(string):
             return any(char.isdigit() for char in string)
 
-        # Process IPSW's if requested
-        if ipsw:
-            if not any(has_digits(item) for item in ipsw):
-                for model in ipsw_model_list:
+        def load_all_ipsw_files():
+            for model in ipsw_model_list:
+                if any(item in model for item in ipsw):
                     _ipsw = self.request_ipsw(model)
                     if _ipsw not in updates:
                         updates.extend(_ipsw)
+
+        # Process IPSW's if requested
+        if ipsw:
+            if not any(has_digits(item) for item in ipsw):
+                load_all_ipsw_files()
             else:
                 for item in ipsw:
                     if item in ipsw_model_list:
@@ -554,7 +566,10 @@ class PreCache():
                         print 'A file already exists, comparing digest for %s' % caching_text  # NOQA
                         # SHA1 or MD5 digest for ipsw files
                         if self.compare_digests(self.file_digest(output_file, digest_type='sha1'), item.sha_digest):  # NOQA
-                            print 'Skipping: %s' % caching_text
+                            if self.dry_run:
+                                print 'Skip: %s' % caching_text
+                            else:
+                                print 'Skipping: %s' % caching_text
                         else:
                             if self.dry_run:
                                 print '%s: %s' % (dry_download_text, caching_text)  # NOQA
@@ -840,8 +855,18 @@ def main():
 
     # Used in the choices options for groups to cache
     asset_groups = ['AppleTV', 'iPad', 'iPhone', 'iPod', 'Watch', 'app', 'installer', 'sucatalog']  # NOQA
+    apps = ['Keynote', 'Xcode', 'iMovie', 'MainStage', 'Server', 'Sierra', 'Numbers', 'ElCapitan', 'GarageBand', 'FinalCutPro', 'LogicProX', 'Pages']  # NOQA
 
     # All the args!
+    parser.add_argument('--apps',
+                        type=str,
+                        nargs='+',
+                        dest='apps',
+                        choices=(apps),
+                        metavar='<product name>',
+                        help='Cache specific apps',
+                        required=False)
+
     parser.add_argument('--cache-group',
                         type=str,
                         nargs='+',
@@ -862,7 +887,7 @@ def main():
     parser.add_argument('-d', '--destination',
                         type=str,
                         nargs=1,
-                        dest='output_dir',
+                        dest='destination_dir',
                         metavar='file path',
                         help='Path to save IPSW files to.',
                         required=False)
@@ -878,33 +903,44 @@ def main():
     parser.add_argument('--jamfserver',
                         type=str,
                         dest='jamfserver',
+                        metavar='server',
                         help='Jamf server address',
                         required=False)
 
     parser.add_argument('--jamfuser',
                         type=str,
                         dest='jamfuser',
+                        metavar='username',
                         help='Jamf server username',
                         required=False)
 
     parser.add_argument('--jamfpassword',
                         type=str,
                         dest='jamfpassword',
+                        metavar='password',
                         help='Jamf server password',
                         required=False)
 
     parser.add_argument('-l', '--list',
                         action='store_true',
-                        dest='list_models',
+                        dest='list',
                         help='Lists all assets available for caching.',
                         required=False)
 
     parser.add_argument('-m', '--model',
                         type=str,
                         nargs='+',
-                        dest='model',
+                        dest='models',
                         metavar='model',
-                        help='Provide model(s)/app(s), i.e iPhone8,2 Xcode.',
+                        help='Provide model(s). For example: iPad6,8',
+                        required=False)
+
+    parser.add_argument('-u', '--updates',
+                        type=str,
+                        nargs='+',
+                        dest='mac_updates',
+                        metavar='product id/keyword',
+                        help='Provide a product id or keyword from an update. Use the -l,--list command to get a list of updates.',  # NOQA
                         required=False)
 
     parser.add_argument('-n', '--dry-run',
@@ -928,20 +964,52 @@ def main():
             print '%s' % version
             sys.exit(0)
 
+        if args.destination_dir:
+            _destination = args.destination_dir[0]
+        else:
+            _destination = None
+
+        if args.cache_server:
+            _cache_server = args.cache_server[0]
+        else:
+            _cache_server = None
+
         # This deals with "mutually exclusive" arguments better than argparse
-        if args.list_models and (args.model or args.ipsw_model or args.ver or args.cache_group or args.jamfserver or args.jamfuser or args.jamfpassword):  # NOQA
+        if args.list and (args.models or args.ipsw_model or args.ver or args.cache_group or args.jamfserver or args.jamfuser or args.jamfpassword):  # NOQA
             print 'Cannot combine these arguments with -l,--list'
             sys.exit(1)
         else:
-            if args.list_models:
-                p = PreCache(dry_run=True)
+            if args.list:
+                p = PreCache(server=_cache_server, destination=_destination, dry_run=True)  # NOQA
                 p.list_assets(verbose=True)
             else:
+                if args.apps:
+                    _apps = args.apps
+                else:
+                    _apps = None
+
+                if args.cache_group:
+                    _groups = args.cache_group
+                else:
+                    _groups = None
+
                 if args.ipsw_model:
                     _ipsw_models = args.ipsw_model
+                else:
+                    _ipsw_models = None
 
-                p = PreCache(dry_run=True)
-                p.main_processor(ipsw=_ipsw_models)
+                if args.mac_updates:
+                    _mac_updates = args.mac_updates
+                else:
+                    _mac_updates = None
+
+                if args.models:
+                    _models = args.models
+                else:
+                    _models = None
+
+                p = PreCache(server=_cache_server, destination=_destination, dry_run=True)  # NOQA
+                p.main_processor(apps=_apps, groups=_groups, ipsw=_ipsw_models, mac_updates=_mac_updates, models=_models)  # NOQA
 
 
 # Run main()
