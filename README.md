@@ -10,7 +10,7 @@ This is an open source utility to pre cache various files in relation to iOS/wat
 ## Why would I use this?
 The caching/tetherator service provided by Apple will purge items from the cache when they meet some basic criteria:
 1. Insufficient space in the cache to store any new incoming assets
-2. Existing assets have not been retrieved for more than n days
+2. Existing assets have not been retrieved for more than _n_ days
 
 `precache.py` allows you to keep those items in your cache almost _indefinitely_, as well as a means to ensure big updates (such as iOS releases) are already cached for your eager users to download while attached to your network, thus saving precious bandwidth (spot the Aussie!).
 
