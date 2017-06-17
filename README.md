@@ -59,7 +59,7 @@ iOS and tvOS model information can be retrieved from an MDM. Presently only Jamf
 
 You can configure the credentials and server in the configuration file as outlined in the User configurable options section above, or provide them from the command line.
 
-*Note* _Only use accounts with read only access, or other similar type of service accounts_
+**Note** _Only use accounts with read only access, or other similar type of service accounts_
 
 Any models supplied with the `-m,--models` argument are ignored when MDM arguments are used.
 
