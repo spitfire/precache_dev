@@ -70,3 +70,12 @@ To run `precache.py` as a LaunchDaemon, you can do the following:
 3. Copy `com.github.krypted.precache.daemon.plist` to `/Library/LaunchDaemons` and make sure ownership and permissions are correct by running `chmod 644 /Library/LaunchDaemons/com.github.krypted.precache.daemon.plist && chown root:wheel /Library/LaunchDaemons/com.github.krypted.precache.daemon.plist`
 4. If you wish to modify the day(s) or time that the daemon runs at, modify the `/Library/LaunchDaemons/com.github.krypted.precache.daemon.plist` file.
 5. Run `/bin/launchctl load /Libary/LaunchDaemons/com.github.krypted.precache.daemon.plist`
+
+
+## Requirements
+This is tested on a macOS Sierra system with `python 2.7.10`. No third party modules/eggs are required.
+
+## Security
+Certain processes within this script rely on the `urllib2` module, and others utilise the system binary `/usr/bin/curl`; an assumption is made that these are both HTTPS capable.
+
+If you are concerned about any data from your MDM being interecepted, then you should avoid using the MDM capability and instead maintain a list of models to cache items for within the configuration file.
