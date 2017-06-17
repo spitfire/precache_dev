@@ -1,6 +1,9 @@
 # precache - development only
 This is the development repo for `precache.py`. Do not use in production!
 
+# NOTE!!!!!
+### There have been some changes made to how `precache.py` runs, please read this thoroughly and read `./precache.py --help`
+
 ## What is `precache.py`?
 This is an open source utility to pre cache various files in relation to iOS/watchOS/tvOS and macOS software updates.
 
