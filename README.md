@@ -6,11 +6,11 @@ This is the development repo for `precache.py`. Do not use in production!
 - Pull models from Jamf/JSS MDM. Additional MDM support slowly being added.
 - Command line arguments have been simplified. Check `./precache.py --help` for more information
 - Can now configure a number of options in a configuration file. See `Configuration file` section below for more information.
-- Dropped the old download code in favour of using the `/usr/bin/curl` system binary
-- Fixed the bug where ipsw files would not be written to disk properly
+- Dropped the old download code in favour of using the `/usr/bin/curl` system binary.
+- Fixed the bug where ipsw files would not be written to disk properly.
 
 ### Future changes
-- Will be moving away from `urllib2` in the next release to the third party `requests` module, so make sure you've got this installed - `sudo pip install requests` or `sudy easy_install requests` (or whatever your preferred method is for installing python modules)
+- Will be moving away from `urllib2` in the next release to the third party `requests` module, so make sure you've got this installed - `sudo pip install requests` or `sudy easy_install requests` (or whatever your preferred method is for installing python modules).
 - Support for caching Mac App Store apps is going to be removed in the next release. Keeping the URL's updated is a time consuming task that doesn't appear possible to automate. The only way this feature is likely to remain is if there are people willing to keep those URL's updated as Apple releases updates. If you're interested in finding out how to do this, raise an issue with the label `contribute`.
 
 ## What is `precache.py`?
@@ -18,16 +18,16 @@ This is an open source utility to pre cache various files in relation to iOS/wat
 
 ## Why would I use this?
 The caching/tetherator service provided by Apple will purge items from the cache when they meet some basic criteria:
-1. Insufficient space in the cache to store any new incoming assets
-2. Existing assets have not been retrieved for more than _n_ days
+1. Insufficient space in the cache to store any new incoming assets.
+2. Existing assets have not been retrieved for more than _n_ days.
 
 `precache.py` allows you to keep those items in your cache almost _indefinitely_, as well as a means to ensure big updates (such as iOS releases) are already cached for your eager users to download while attached to your network, thus saving precious bandwidth (spot the Aussie!).
 
 ## How do I use this?
 First, you'll need to clone the repo _somewhere_.
-1. `cd` into the location you wish to use this from, for example: `cd /usr/local/bin`
-2. `git clone https://github.com/carlashley/precache_dev`
-3. `cd precache_dev && chmod +x precache.py`
+1. `cd` into the location you wish to use this from, for example: `cd /usr/local/bin`.
+2. `git clone https://github.com/carlashley/precache_dev`.
+3. `cd precache_dev && chmod +x precache.py`.
 4. `./precache.py` for the help output, `./precache.py -l` for the list of updates available.
 
 ## Configuration file
@@ -76,9 +76,9 @@ Any models supplied with the `-m,--models` argument are ignored when MDM argumen
 To run `precache.py` as a LaunchDaemon, you can do the following:
 1. Make a copy of the configuration file as per steps outlined in the `Configuration File` section.
 2. Make changes to the configuration file as per the `User configuration options`.
-3. Copy `com.github.krypted.precache.daemon.plist` to `/Library/LaunchDaemons` and make sure ownership and permissions are correct by running `chmod 644 /Library/LaunchDaemons/com.github.krypted.precache.daemon.plist && chown root:wheel /Library/LaunchDaemons/com.github.krypted.precache.daemon.plist`
+3. Copy `com.github.krypted.precache.daemon.plist` to `/Library/LaunchDaemons` and make sure ownership and permissions are correct by running `chmod 644 /Library/LaunchDaemons/com.github.krypted.precache.daemon.plist && chown root:wheel /Library/LaunchDaemons/com.github.krypted.precache.daemon.plist`.
 4. If you wish to modify the day(s) or time that the daemon runs at, modify the `/Library/LaunchDaemons/com.github.krypted.precache.daemon.plist` file.
-5. Run `/bin/launchctl load /Libary/LaunchDaemons/com.github.krypted.precache.daemon.plist`
+5. Run `/bin/launchctl load /Libary/LaunchDaemons/com.github.krypted.precache.daemon.plist`.
 
 
 ## Requirements
