@@ -355,24 +355,55 @@ class PreCache():
             )
             yield asset
 
-    def jamf_models(self, jamf_server, jamf_user, jamf_pass):
-        '''Returns a list of iOS devices from a JSS instance.
+    def mdm_models(self, mdm_server=None, mdm_user=None, mdm_pass=None, mdm_token=None):  # NOQA
+        '''Returns a list of iOS devices from an MDM instance.
         JSS returns Apple TV's in this list as well.
-        the argument jamf_server must be either a JAMFCloud instance, or a self
-        hosted instance in the format of:
-            jssname.example.com:port
+        At present, only JAMFCloud/JSS is supported.
+
+        mdm_server should be in the format:  jssname.example.com:port
         *JSS port for self hosted is typically 8443. Port is not required for
         JAMFCloud hosted instances.
         '''
-        jamf_server = 'https://%s/JSSResource/mobiledevices' % jamf_server
+        try:
+            # Try loading from configuration first
+            mdm_server = self.configuration['mdmServer']
+        except:
+            # Fall back to argument
+            if mdm_server:
+                mdm_server = 'https://%s/JSSResource/mobiledevices' % mdm_server  # NOQA
+            else:
+                print 'Please supply the MDM server url in either the configuration file, or at the command line.'  # NOQA
+                sys.exit(1)
 
         # Credentials need to be base64 encoded
-        jamf_credentials = base64.b64encode('%s:%s' % (jamf_user, jamf_pass))
+        try:
+            user = base64.b64encode(self.configuration['mdmUser'])
+        except:
+            if mdm_user:
+                user = base64.b64encode(mdm_user)
+            else:
+                print 'Please supply a username in either the configuration file, or at the command line.'  # NOQA
+                sys.exit(1)
+
+        try:
+            password = base64.b64encode(self.configuration['mdmPassword'])
+        except:
+            if mdm_pass:
+                password = base64.b64encode(mdm_pass)
+            else:
+                print 'Please supply a password in either the configuration file, or at the command line.'  # NOQA
+                sys.exit(1)
+
+        if not mdm_token:
+            credentials = '%s:%s' % (user, password)
+        if mdm_token:
+            print 'Token based authentication is is an incomplete feature.'
+            sys.exit(1)
 
         try:
             models = []
-            request = urllib2.Request(jamf_server)
-            request.add_header('Authorization', 'Basic %s' % jamf_credentials)
+            request = urllib2.Request(mdm_server)
+            request.add_header('Authorization', 'Basic %s' % credentials)
             response = urllib2.urlopen(request)
             tree = ET.fromstring(response.read())
             for child in tree.findall('mobile_device'):
@@ -468,8 +499,8 @@ class PreCache():
 
         # Some usage instructions
         print '\nNote for iOS/watchOS/tvOS: Please use the model number (example: iPad6,7) when caching those items.'  # NOQA
-        print '\nNote for apps: Please use the app name, not the version, when caching those items.'  # NOQA
-        print '\nNote for macOS Software updates: You can use the Product ID or part/all of the description to cache those items.'  # NOQA
+        print 'Note for apps/macOS installers: Please use the app/installer name without the version when caching those items.'  # NOQA
+        print 'Note for macOS Software updates: You can use the Product ID or part/all of the description to cache those items.'  # NOQA
 
     def main_processor(self, apps=None, groups=None, ipsw=None, mac_updates=None, models=None):  # NOQA
         '''Main processor that handles figuring out whether an item should be
@@ -489,6 +520,42 @@ class PreCache():
             if any(i in item.model for i in self.ipsw_capable) and item.model not in ipsw_model_list:  # NOQA
                 ipsw_model_list.append(item.model)
         ipsw_model_list.sort()
+
+        # If no arguments are provided to main_processor() try and load from configuration  # NOQA
+        if not models:
+            try:
+                if len(self.configuration['cacheModels']) >= 1:
+                    models = self.configuration['cacheModels']
+            except:
+                pass
+
+        if not ipsw:
+            try:
+                if len(self.configuration['cacheIPSW']) >= 1:
+                    ipsw = self.configuration['cacheIPSW']
+            except:
+                pass
+
+        if not groups:
+            try:
+                if len(self.configuration['cacheGroups']) >= 1:
+                    groups = self.configuration['cacheGroups']
+            except:
+                pass
+
+        if not apps:
+            try:
+                if len(self.configuration['cacheApps']) >= 1:
+                    apps = self.configuration['cacheApps']
+            except:
+                pass
+
+        if not mac_updates:
+            try:
+                if len(self.configuration['cacheMacUpdates']) >= 1:
+                    apps = self.configuration['cacheMacUpdates']
+            except:
+                pass
 
         # Because processing software updates can take a while, only do this if
         # the sucatalog exists in groups or if software_updates exists
@@ -900,25 +967,25 @@ def main():
                         help='Cache IPSW for provided model/s.',
                         required=False)
 
-    parser.add_argument('--jamfserver',
+    parser.add_argument('--mdm-server',
                         type=str,
-                        dest='jamfserver',
+                        dest='mdm_server',
                         metavar='server',
-                        help='Jamf server address',
+                        help='MDM server address. Only JAMFCloud/JSS supported at present.',  # NOQA
                         required=False)
 
-    parser.add_argument('--jamfuser',
+    parser.add_argument('--mdm-user',
                         type=str,
-                        dest='jamfuser',
+                        dest='mdm_user',
                         metavar='username',
-                        help='Jamf server username',
+                        help='MDM username',
                         required=False)
 
-    parser.add_argument('--jamfpassword',
+    parser.add_argument('--mdm-password',
                         type=str,
-                        dest='jamfpassword',
+                        dest='mdm_password',
                         metavar='password',
-                        help='Jamf server password',
+                        help='MDM password',
                         required=False)
 
     parser.add_argument('-l', '--list',
@@ -958,8 +1025,12 @@ def main():
     # Process arguments
     args = parser.parse_args()
 
-    # Do the tango, or the waltz. Whatever. Just do it!
-    if len(sys.argv) > 1:
+    # If no arguments are supplied, initialise and run with best effort to detect configuration and caching server  # NOQA
+    if len(sys.argv) == 1:
+        p = PreCache()
+        p.main_processor()
+    # If arguments are supplied, process them.
+    elif len(sys.argv) > 1:
         if args.ver:
             print '%s' % version
             sys.exit(0)
@@ -975,7 +1046,7 @@ def main():
             _cache_server = None
 
         # This deals with "mutually exclusive" arguments better than argparse
-        if args.list and (args.models or args.ipsw_model or args.ver or args.cache_group or args.jamfserver or args.jamfuser or args.jamfpassword):  # NOQA
+        if args.list and (args.models or args.ipsw_model or args.ver or args.cache_group or args.mdm_server or args.mdm_user or args.mdm_password):  # NOQA
             print 'Cannot combine these arguments with -l,--list'
             sys.exit(1)
         else:
@@ -1004,7 +1075,27 @@ def main():
                     _mac_updates = None
 
                 if args.models:
-                    _models = args.models
+                    # If any details have been provided
+                    try:
+                        if args.mdm_server:
+                            _mdm_server = args.mdm_server[0]
+                        else:
+                            _mdm_server = None
+
+                        if args.mdm_server:
+                            _mdm_user = args.mdm_user[0]
+                        else:
+                            _mdm_user = None
+
+                        if args.mdm_password:
+                            _mdm_pass = args.mdm_password[0]
+                        else:
+                            _mdm_pass = None
+
+                        _models = p.mdm_models(mdm_server=_mdm_server, mdm_user=_mdm_user, mdm_pass=_mdm_pass)  # NOQA
+                    except:
+                        # Fall back to models provided in argument. Note that using MDM lookup of models excludes all models supplied at the command line.  # NOQA
+                        _models = args.models
                 else:
                     _models = None
 
