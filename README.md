@@ -1,8 +1,17 @@
 # precache - development only
 This is the development repo for `precache.py`. Do not use in production!
 
-# NOTE!!!!!
-### There have been some changes made to how `precache.py` runs, please read this thoroughly and read `./precache.py --help`
+## Release notes - v2.0.0
+### Current version changes
+- Pull models from Jamf/JSS MDM. Additional MDM support slowly being added.
+- Command line arguments have been simplified. Check `./precache.py --help` for more information
+- Can now configure a number of options in a configuration file. See `Configuration file` section below for more information.
+- Dropped the old download code in favour of using the `/usr/bin/curl` system binary
+- Fixed the bug where ipsw files would not be written to disk properly
+
+### Future changes
+- Will be moving away from `urllib2` in the next release to the third party `requests` module, so make sure you've got this installed - `sudo pip install requests` or `sudy easy_install requests` (or whatever your preferred method is for installing python modules)
+- Support for caching Mac App Store apps is going to be removed in the next release. Keeping the URL's updated is a time consuming task that doesn't appear possible to automate. The only way this feature is likely to remain is if there are people willing to keep those URL's updated as Apple releases updates. If you're interested in finding out how to do this, raise an issue with the label `contribute`.
 
 ## What is `precache.py`?
 This is an open source utility to pre cache various files in relation to iOS/watchOS/tvOS and macOS software updates.
@@ -75,7 +84,14 @@ To run `precache.py` as a LaunchDaemon, you can do the following:
 ## Requirements
 This is tested on a macOS Sierra system with `python 2.7.10`. No third party modules/eggs are required.
 
+**Reminder** Future releases will require the `requests` module to be installed, so please make sure you've got this in the environment that you run this in!
+
 ## Security
 Certain processes within this script rely on the `urllib2` module, and others utilise the system binary `/usr/bin/curl`; an assumption is made that these are both HTTPS capable.
 
 If you are concerned about any data from your MDM being interecepted, then you should avoid using the MDM capability and instead maintain a list of models to cache items for within the configuration file.
+
+## Bugs/issues/pull requests
+If you see bugs or issues with this, please raise an issue that includes the arguments that `precache.py` was run with.
+
+If you wish to contribute to testing various MDM API's, please raise an issue as well. I'm specifically looking for SimpleMDM and Meraki testers to start with. It will help if you're familiar with python.
