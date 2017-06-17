@@ -40,11 +40,11 @@ Modify relevant settings in the file with your favourite text editor. Do not use
 ### User configurable options
 | Preference Key | Type | Value |
 | -------------- | ---- | ----- |
-| `cacheApps` | List | Any app or macOS installer as per the `precache.py -l` output. |
-| `cacheGroups` | List | Any from `'AppleTV', 'iPad', 'iPhone', 'iPod', 'app', 'installer', 'sucatalog'`. |
-| `cacheIPSW` | List | Any valid Apple model identier for Apple TV, iPad, iPhone, or iPod. In the format `iPad6,8`. To cache all IPSW files for a specifc device, simply use the model identifier without the numbers, for example: `iPad`. |
-| `cacheMacUpdates` | List | Any valid product ID or keyword from the `precache.py -l` output. |
-| `cacheModels` | List | Any valid model identifier in the format `iPad6,8`. |
+| `cacheApps` | Array | Any app or macOS installer as per the `precache.py -l` output. |
+| `cacheGroups` | Array | Any from `'AppleTV', 'iPad', 'iPhone', 'iPod', 'app', 'installer', 'sucatalog'`. |
+| `cacheIPSW` | Array | Any valid Apple model identier for Apple TV, iPad, iPhone, or iPod. In the format `iPad6,8`. To cache all IPSW files for a specifc device, simply use the model identifier without the numbers, for example: `iPad`. |
+| `cacheMacUpdates` | Array | Any valid product ID or keyword from the `precache.py -l` output. |
+| `cacheModels` | Array | Any valid model identifier in the format `iPad6,8`. |
 | `cacheServerPort` | Integer | The port number your cache server responds on. See note on finding the server port and address. |
 | `cacheServerURL` | String | The IP address or URL of your caching server. Must include `http://`. See note on finding the server port and address. |
 | `destination` | String | A folder in your local storage where you want IPSW files to be stored to. Defaults to `/tmp` of nothing is provided. |
