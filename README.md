@@ -1,6 +1,10 @@
 # precache - development only
 This is the development repo for `precache.py`. Do not use in production!
 
+## Release notes - v2.0.1
+- Implemented switch over to the `requests` module for python. You will be prompted to install this if it isn't importable.
+- Implemented Jamf/JSS and SimpleMDM as sources for MDM. See the `mdm` key in the User configurable options section below.
+
 ## Release notes - v2.0.0
 ### Current version changes
 - Pull models from Jamf/JSS MDM. Additional MDM support slowly being added.
@@ -10,8 +14,8 @@ This is the development repo for `precache.py`. Do not use in production!
 - Fixed the bug where ipsw files would not be written to disk properly.
 
 ### Future changes
-- Will be moving away from `urllib2` in the next release to the third party `requests` module, so make sure you've got this installed - `sudo pip install requests` or `sudy easy_install requests` (or whatever your preferred method is for installing python modules).
-- Support for caching Mac App Store apps is going to be removed in the next release. Keeping the URL's updated is a time consuming task that doesn't appear possible to automate. The only way this feature is likely to remain is if there are people willing to keep those URL's updated as Apple releases updates. If you're interested in finding out how to do this, raise an issue with the label `contribute`.
+- Update 2017-06-25: Support for caching Mac App Store apps is staying,  _for now_, future versions may only support caching macOS Installer apps.
+- - Support for caching Mac App Store apps is going to be removed in the next release. Keeping the URL's updated is a time consuming task that doesn't appear possible to automate. The only way this feature is likely to remain is if there are people willing to keep those URL's updated as Apple releases updates. If you're interested in finding out how to do this, raise an issue with the label `contribute`.
 
 ## What is `precache.py`?
 This is an open source utility to pre cache various files in relation to iOS/watchOS/tvOS and macOS software updates.
@@ -48,9 +52,10 @@ Modify relevant settings in the file with your favourite text editor. Do not use
 | `cacheServerPort` | Integer | The port number your cache server responds on. See note on finding the server port and address. |
 | `cacheServerURL` | String | The IP address or URL of your caching server. Must include `http://`. See note on finding the server port and address. |
 | `destination` | String | A folder in your local storage where you want IPSW files to be stored to. Defaults to `/tmp` of nothing is provided. |
+| `mdm` | String | `jamf` or `simplemdm`. Used to specify which MDM provider to pull from. |
 | `mdmPassword` | String | The password used for your MDM server. Please see support note below. |
 | `mdmServer` | String | The MDM server address. In the format `foo.example.org`. If your MDM server uses a specific port, in the format of `foo.example.org:8443` Please see support note below. |
-| `mdmToken` | String | Currently unsupported. |
+| `mdmToken` | String | The token provided by your MDM for use with the API. |
 | `mdmUser` | String | The username used for your MDM server. Please see support note below. |
 
 #### Finding your server port and address

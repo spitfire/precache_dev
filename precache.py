@@ -1,16 +1,23 @@
 #!/usr/bin/python
 import argparse
-import base64
 import collections
 import hashlib
-import json
+import logging
 import os
 import subprocess
 import sys
-import urllib2
-import xml.etree.ElementTree as ET
+# import xml.etree.ElementTree as ET
+
+try:
+    import requests
+    from requests.auth import HTTPBasicAuth
+except:
+    print 'Please install the requests module: sudo pip install requests'  # NOQA
+    print 'Information about the module: http://docs.python-requests.org/en/master/'  # NOQA
+    sys.exit(1)
 
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from operator import attrgetter
 from plistlib import readPlist
 from plistlib import readPlistFromString
@@ -22,8 +29,8 @@ from urlparse import urlparse
 script_name = 'precache.py'
 __author__ = 'Charles Edge and Carl Windus'
 __copyright__ = 'Copyright 2016, Charles Edge, Carl Windus'
-__version__ = '2.0.0'
-__date__ = '2017-06-17'
+__version__ = '2.0.1'
+__date__ = '2017-06-25'
 
 __license__ = 'Apache License, Version 2.0'
 __maintainer__ = 'Carl Windus: https://github.com/carlashley/precache_dev'
@@ -31,24 +38,41 @@ __status__ = 'development'
 
 
 class PreCache():
-    def __init__(self, server=None, destination=None, dry_run=None):
+    def __init__(self, destination=None, dry_run=None, server=None, use_config=None):  # NOQA
         '''Initialises the class with supplied arguments, and loads
         configuration information if present in the config plist.'''
+        # Logging
+        self.log_file = '/tmp/precache.log'
+        self.log = logging.getLogger('precache')
+        self.log.setLevel(logging.DEBUG)
+        self.log_format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")  # NOQA
+        self.fh = RotatingFileHandler(self.log_file, maxBytes=(1048576*5), backupCount=7)  # NOQA Logs capped at ~5MB
+        self.fh.setFormatter(self.log_format)
+        self.log.addHandler(self.fh)
+
         # Configuration variables
         # This is an example configuration file, please copy this plist and
         # modify it with your own configuration data, and update this variable
         # to point to the right file.
+
+        custom_config_file = 'com.github.krypted.precache.my-config.plist'
+        default_config_file = 'com.github.krypted.precache.example-config.plist'  # NOQA
+
         try:
-            self.configuration = self.load_config('com.github.krypted.precache.my-config.plist')  # NOQA
+            self.configuration = self.load_config(custom_config_file)
+            self.log.info('Loaded configuration from %s' % custom_config_file)
         except:
             try:
-                self.configuration = self.load_config('com.github.krypted.precache.example-config.plist')  # NOQA
+                self.configuration = self.load_config(default_config_file)
+                self.log.info('Loaded configuration from %s' % default_config_file)  # NOQA
             except:
-                print 'No configuration file found. Please create one using ./make_config.py'  # NOQA
+                print 'No configuration file found.'
+                self.log.info('No configuration file found.')
                 sys.exit(1)
 
         if dry_run:
             self.dry_run = dry_run
+            self.log.debug('Dry run enabled')
         else:
             self.dry_run = False
 
@@ -60,11 +84,13 @@ class PreCache():
                 self.destination = self.configuration['destination']
             except:
                 self.destination = '/tmp'
+        self.log.debug('Output destination: %s' % self.destination)
 
         try:
-            self.user_agent = configuration['userAgentString']  # NOQA
+            self.user_agent = '%s/%s' % (configuration['userAgentString'], __version__)  # NOQA
         except:
-            self.user_agent = 'precache'
+            self.user_agent = 'precache/%s' % __version__
+        self.log.debug('User Agent: %s' % self.user_agent)
 
         self.write_out('Locating caching/tetherator server')
         if server:
@@ -74,6 +100,7 @@ class PreCache():
                 self.server = self.valid_server('%s:%s' % (self.configuration['cacheServerURL'], self.configuration['cacheServerPort']))  # NOQA
             except:
                 self.server = self.valid_server(self.cache_server())
+        self.log.info('Caching server: %s' % self.server)
 
         # Update location and destination.
         self.write_out('Locating caching/tetherator server %s. Destination: %s' % (self.server, self.destination))  # NOQA
@@ -81,7 +108,6 @@ class PreCache():
 
         self.mac_model = self.hardware_model()
         self.sucatalog = urljoin(self.configuration['swuBaseURL'], self.configuration['softwareUpdateFeed']['all'])  # NOQA
-        # self.sucatalog = urljoin(self.configuration['swuBaseURL'], self.configuration['softwareUpdateFeed']['sierra'])  # NOQA
 
         # iOS Devices
         self.ios_devices = ['iPad', 'iPhone', 'iPod']
@@ -105,43 +131,51 @@ class PreCache():
                                                       'release_date',
                                                       'sha_digest'])
 
+        # Stops models/ipsw files/apps etc being used from the configuration
+        # file if this is being used with arguments
+        if use_config:
+            self.use_config = True
+        else:
+            self.use_config = False
+
     def already_cached(self, asset_url):
         '''Checks if an item is already cached. This is indicated in the
         headers of the file being checked.'''
         try:
-            req = self.request_url(asset_url)
-            if req.info().getheader('Content-Type') is not None:
+            req = requests.get(asset_url, headers={'user-agent': self.user_agent}, timeout=10)  # NOQA
+            if req.headers.get('Content-Type') is not None:
                 # Item is not in cache
+                self.log.debug('Not in cache: %s' % asset_url)
                 return False
             else:
                 # Item is already cached
+                self.log.info('Already in cache: %s' % asset_url)
                 return True
         except:
             # In case there is an error, we should return false anyway as there
             # is no harm in re-downloading the item if it's already downloaded.
             return False
 
-    def app_config(self):
-        '''Loads the configuration of what apps are cacheable by this utility'''  # NOQA
-        app_config_req = self.request_url(self.configuration['appsCanCache'])
-        apps_config = readPlistFromString(app_config_req.read())
-        app_config_req.close()
-        return apps_config
-
     def app_updates(self):
         '''Returns a generator object with all macOS apps that we can cache.
         Note, this list may not be up to date with the Mac App Store versions
         as this relies on manually updating the remote feed.'''
-        apps = self.read_feed(self.configuration['appsCanCache'])
-        for item in apps:
-            asset = self.asset(
-                model=self.mac_model,
-                version=apps[item]['version'],
-                urls=[self.reformat_url(apps[item]['url'])],
-                group=apps[item]['type'],
-                product_title=item,
-            )
-            yield asset
+        try:
+            app_feed = self.configuration['appsCanCache']
+            apps = self.read_feed(app_feed)
+            for item in apps:
+                asset = self.asset(
+                    model=self.mac_model,
+                    version=apps[item]['version'],
+                    urls=[self.reformat_url(apps[item]['url'])],
+                    group=apps[item]['type'],
+                    product_title=item,
+                )
+                yield asset
+            self.log.debug('Loaded apps from feed: %s' % app_feed)
+        except:
+            self.log.debug('Unable to load apps from GitHub feed.')
+            raise
 
     def asset(self, model=None, model_description=None, version=None, urls=None, group=None, product_id=None, product_title=None, release_date=None, sha_digest=None):  # NOQA
         return self.Asset(
@@ -165,8 +199,10 @@ class PreCache():
                          self.configuration['cacheServerConfigPlist']]
         try:
             plist = [x for x in config_plists if os.path.exists(x)][0]
+            self.log.debug('Found caching server plist: %s' % plist)
         except:
             plist = False
+            self.log.debug('No caching server plist found.')
 
         if plist:
             # Fall back to testing if Caching Server/Server.app or tetherator
@@ -176,6 +212,7 @@ class PreCache():
                 try:
                     port = readPlist(plist)['Port']
                 except:
+                    self.log.debug('No port for caching server found in %s' % plist)  # NOQA
                     raise Exception('No port found.')
             if port:
                 return 'http://localhost:%s' % port
@@ -198,10 +235,12 @@ class PreCache():
                         if item.replace(',', '') not in result:
                             result.append(item.replace(',', ''))
                 if len(result) > 0:
+                    self.log.debug('Success finding caching server: %s' % cmd)
                     return 'http://%s' % result[0]
                 else:
                     # If all else fails, raise an exception
-                    raise Exception('No Caching server found.')
+                    self.log.debug('No caching server found.')
+                    raise Exception('No caching server found.')
         except:
             raise
 
@@ -243,8 +282,10 @@ class PreCache():
         if not output_file.endswith('.ipsw'):  # NOQA
             try:
                 os.remove(output_file)
-            except:
-                raise
+                self.log.debug('Deleted: %s' % output_file)
+            except Exception as e:
+                self.log.debug('Unable to delete %s: %s' % (output_file, e))
+                raise e
 
         sleep(uniform(1, 2))
 
@@ -275,8 +316,10 @@ class PreCache():
         cmd = ['/usr/sbin/sysctl', 'hw.model']
         result, error = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()  # NOQA
         if result:
+            self.log.debug('Found Mac hardware model.')
             return result.strip('\n').split(' ')[1]
         else:
+            self.log.debug('No Mac hardware model found.')
             return None
 
     def ios_updates(self, iOS=False, watchOS=False, tvOS=False, models=None, groups=None):  # NOQA
@@ -291,14 +334,17 @@ class PreCache():
         if iOS:
             ios_feed = urljoin(self.configuration['iosBaseURL'], self.configuration['iosFeeds']['ios'])  # NOQA
             updates.extend(self.read_feed(ios_feed)['Assets'])
+            self.log.debug('Extended udpates list with iOS feed')
 
         if watchOS:
             watch_feed = urljoin(self.configuration['iosBaseURL'], self.configuration['iosFeeds']['watch'])  # NOQA
             updates.extend(self.read_feed(watch_feed)['Assets'])
+            self.log.debug('Extended udpates list with watchOS feed')
 
         if tvOS:
             tv_feed = urljoin(self.configuration['iosBaseURL'], self.configuration['iosFeeds']['tv'])  # NOQA
             updates.extend(self.read_feed(tv_feed)['Assets'])
+            self.log.debug('Extended udpates list with tvOS feed')
 
         def cacheable(asset):
             try:
@@ -366,74 +412,15 @@ class PreCache():
             )
             yield asset
 
-    def mdm_models(self, mdm_server=None, mdm_user=None, mdm_pass=None, mdm_token=None):  # NOQA
-        '''Returns a list of iOS devices from an MDM instance.
-        JSS returns Apple TV's in this list as well.
-        At present, only JAMFCloud/JSS is supported.
-
-        mdm_server should be in the format:  jssname.example.com:port
-        *JSS port for self hosted is typically 8443. Port is not required for
-        JAMFCloud hosted instances.
-        '''
-        try:
-            # Try loading from configuration first
-            mdm_server = self.configuration['mdmServer']
-        except:
-            # Fall back to argument
-            if mdm_server:
-                mdm_server = 'https://%s/JSSResource/mobiledevices' % mdm_server  # NOQA
-            else:
-                print 'Please supply the MDM server url in either the configuration file, or at the command line.'  # NOQA
-                sys.exit(1)
-
-        # Credentials need to be base64 encoded
-        try:
-            user = base64.b64encode(self.configuration['mdmUser'])
-        except:
-            if mdm_user:
-                user = base64.b64encode(mdm_user)
-            else:
-                print 'Please supply a username in either the configuration file, or at the command line.'  # NOQA
-                sys.exit(1)
-
-        try:
-            password = base64.b64encode(self.configuration['mdmPassword'])
-        except:
-            if mdm_pass:
-                password = base64.b64encode(mdm_pass)
-            else:
-                print 'Please supply a password in either the configuration file, or at the command line.'  # NOQA
-                sys.exit(1)
-
-        if not mdm_token:
-            credentials = '%s:%s' % (user, password)
-        if mdm_token:
-            print 'Token based authentication is is an incomplete feature.'
-            sys.exit(1)
-
-        try:
-            models = []
-            request = urllib2.Request(mdm_server)
-            request.add_header('Authorization', 'Basic %s' % credentials)
-            response = urllib2.urlopen(request)
-            tree = ET.fromstring(response.read())
-            for child in tree.findall('mobile_device'):
-                if any(child.findtext('model_identifier')) not in models:
-                    models.append(child.findtext('model_identifier'))
-
-            return models
-
-        except:
-            raise
-
     def load_config(self, config_file):
         '''Loads configuration from the local configuration plist'''
         # Make sure configuration plist is in the same directory as script
         try:
-            configuration = readPlist(config_file)
-            return configuration
-        except:
-            raise Exception('Configuration file %s not found' % config_file)
+            self.log.debug('load_config() success')
+            return readPlist(config_file)
+        except Exception as e:
+            self.log.debug('load_config() failed: %s' % e)
+            raise e
 
     def list_assets(self, verbose=False):
         '''A list of assets that can be cached.'''
@@ -451,12 +438,14 @@ class PreCache():
         def device_description(asset):
             if 'Watch' not in asset:
                 url = 'https://api.ipsw.me/v2.1/%s/latest/name' % asset
-                return self.request_url(url).read()
+                self.log.debug('Getting device description: %s' % asset)
+                return requests.get(url, headers={'user-agent': self.user_agent}, timeout=10).text  # NOQA
             else:
                 return 'Apple Watch'
 
         # Get iOS assets we can cache
         ios_assets = self.ios_updates(iOS=True, watchOS=True, tvOS=True)
+
         # It can take a while to get the human readable model description, so
         # only get this if verbose is supplied as an argument.
         # Otherwise, just output model numbers
@@ -467,6 +456,8 @@ class PreCache():
                 if asset_description not in garbage_list:
                     garbage_list.append(asset_description)
 
+            # List comprehension over the garbage_list builds ios_cacheable
+            # list with the device model and human readable description.
             ios_cacheable = ['%s: %s' % (x, device_description(x)) for x in garbage_list]  # NOQA
         else:
             for asset in ios_assets:
@@ -516,13 +507,18 @@ class PreCache():
     def main_processor(self, apps=None, groups=None, ipsw=None, mac_updates=None, models=None):  # NOQA
         '''Main processor that handles figuring out whether an item should be
         downloaded or not'''
-        print 'Building and processing items to cache can take a few minutes. Please be patient.'  # NOQA
+        print 'Processing items to cache can take a few minutes. Please be patient.'  # NOQA
         # Creating an empty list for updates to exist in for processing
         updates = []
 
         # Always need these in the updates list, and these are very lightweight
         # to process compared to the sucatalog for macOS
         updates.extend(self.ios_updates(iOS=True, watchOS=True, tvOS=True))
+        self.log.debug('updates list extended with all iOS update feeds.')
+
+        # Test if IPSW's have numbers
+        def has_digits(string):
+            return any(char.isdigit() for char in string)
 
         # This is to handle instances where downloading a number of IPSW's
         # for a specific set of models might be required.
@@ -530,61 +526,68 @@ class PreCache():
         for item in updates:
             if any(i in item.model for i in self.ipsw_capable) and item.model not in ipsw_model_list:  # NOQA
                 ipsw_model_list.append(item.model)
+                self.log.debug('Building IPSW model list %s' % item.model)
         ipsw_model_list.sort()
 
         # If no arguments are provided to main_processor() try and load from configuration  # NOQA
-        if not models:
-            try:
-                if len(self.configuration['cacheModels']) >= 1:
-                    models = self.configuration['cacheModels']
-            except:
-                pass
+        if self.use_config:
+            if not models:
+                try:
+                    if len(self.configuration['cacheModels']) >= 1:
+                        models = self.configuration['cacheModels']
+                        self.log.debug('No CLI arguments, loading models from configuration file.')  # NOQA
+                except:
+                    pass
 
-        if not ipsw:
-            try:
-                if len(self.configuration['cacheIPSW']) >= 1:
-                    ipsw = self.configuration['cacheIPSW']
-            except:
-                pass
+            if not ipsw:
+                try:
+                    if len(self.configuration['cacheIPSW']) >= 1:
+                        ipsw = self.configuration['cacheIPSW']
+                        self.log.debug('No CLI arguments, loading IPSW from configuration file.')  # NOQA
+                except:
+                    pass
 
-        if not groups:
-            try:
-                if len(self.configuration['cacheGroups']) >= 1:
-                    groups = self.configuration['cacheGroups']
-            except:
-                pass
+            if not groups:
+                try:
+                    if len(self.configuration['cacheGroups']) >= 1:
+                        groups = self.configuration['cacheGroups']
+                        self.log.debug('No CLI arguments, loading groups from configuration file.')  # NOQA
+                except:
+                    pass
 
-        if not apps:
-            try:
-                if len(self.configuration['cacheApps']) >= 1:
-                    apps = self.configuration['cacheApps']
-            except:
-                pass
+            if not apps:
+                try:
+                    if len(self.configuration['cacheApps']) >= 1:
+                        apps = self.configuration['cacheApps']
+                        self.log.debug('No CLI arguments, loading apps from configuration file.')  # NOQA
+                except:
+                    pass
 
-        if not mac_updates:
-            try:
-                if len(self.configuration['cacheMacUpdates']) >= 1:
-                    apps = self.configuration['cacheMacUpdates']
-            except:
-                pass
+            if not mac_updates:
+                try:
+                    if len(self.configuration['cacheMacUpdates']) >= 1:
+                        apps = self.configuration['cacheMacUpdates']
+                        self.log.debug('No CLI arguments, loading Mac updates from configuration file.')  # NOQA
+                except:
+                    pass
 
         # Because processing software updates can take a while, only do this if
         # the sucatalog exists in groups or if software_updates exists
         if (groups and 'sucatalog' in groups) or mac_updates:  # NOQA
             updates.extend(self.software_updates())
+            self.log.debug('Loaded: sucatalog')
 
         # Handle cacheable apps or macOS Installers
         if (groups and any(group in groups for group in self.asset_groups)) or apps:  # NOQA
             updates.extend(self.app_updates())
+            self.log.debug('Loaded: app updates')
 
         # Sort by model
         updates = sorted(updates, key=attrgetter('model'))
-
-        # Test if IPSW's have numbers
-        def has_digits(string):
-            return any(char.isdigit() for char in string)
+        self.log.debug('Sorted updates list')
 
         def load_all_ipsw_files():
+            self.log.debug('load_all_ipsw_files() called')
             for model in ipsw_model_list:
                 if any(item in model for item in ipsw):
                     _ipsw = self.request_ipsw(model)
@@ -641,13 +644,13 @@ class PreCache():
                         download_text = 'Re-downloading'
 
                     if os.path.exists(output_file) and item.sha_digest:
-                        print 'A file already exists, comparing digest for %s' % caching_text  # NOQA
+                        print '  A file already exists, comparing digest for %s' % caching_text  # NOQA
                         # SHA1 or MD5 digest for ipsw files
                         if self.compare_digests(self.file_digest(output_file, digest_type='sha1'), item.sha_digest):  # NOQA
                             if self.dry_run:
-                                print 'Skip: %s' % caching_text
+                                print '  Skip: %s' % caching_text
                             else:
-                                print 'Skipping: %s' % caching_text
+                                print '  Skipping: %s' % caching_text
                         else:
                             if self.dry_run:
                                 print '%s: %s' % (dry_download_text, caching_text)  # NOQA
@@ -667,29 +670,135 @@ class PreCache():
         for update in updates:
             if models:
                 if (any(item in update.model for item in models)) and ('ipsw' not in update.group):  # NOQA
+                    self.log.debug('Model match, caching: %s' % update.model)
                     cache(update)
 
             if ipsw and update.group == 'ipsw':
                 if any(item in update.model for item in ipsw):
+                    self.log.debug('IPSW match, caching: %s' % update.model)
                     cache(update)
 
             if groups:
                 if (any(item in update.group for item in groups)):  # NOQA
+                    self.log.debug('Group match, caching: %s' % update.model)
                     cache(update)
 
             if mac_updates:  # or 'sucatalog' in update.group:
                 # Compare against produdct id and product title
                 if 'sucatalog' in update.group and ((any(item in update.product_id for item in mac_updates)) or any(item in update.product_title for item in mac_updates)):  # NOQA
+                    self.log.debug('Mac update match, caching: %s' % update.model)  # NOQA
                     cache(update)
 
             if apps:
                 if any(item in update.product_title for item in apps):
+                    self.log.debug('App/installer match, caching: %s' % update.model)  # NOQA
                     cache(update)
+
+    def mdm_models(self, mdm=None, mdm_url=None, mdm_user=None, mdm_pass=None, mdm_token=None):  # NOQA
+        '''Returns a list of iOS devices from an MDM instance.'''
+
+        # Default deaders for requests
+        _headers = {
+            'user-agent': '%s' % self.user_agent
+        }
+
+        # MDM methods as API calls differ
+        def jamf(mdm_url, username, password):
+            '''Returns models from Jamf based MDM.
+            Hosted Jamf URL example:
+                https://precache.jamfcloud.com
+            Self hosted Jamf URL example (where specific port is required):
+                https://example.org:8443
+            '''
+            # Default response is XML, change to JSON
+            _headers['Accept'] = 'application/json'
+
+            if mdm_url.startswith('https://'):
+                # Strips trailing slash and joins the JSSresources API path
+                mdm_url = '%s/JSSResource/mobiledevices' % mdm_url.rstrip('/')
+                try:
+                    # The requests module automatically base64 encodes the
+                    # supplied username & password)
+                    self.log.info('Requesting models from: %s' % mdm_url)
+                    req = requests.get(mdm_url, auth=HTTPBasicAuth(username, password), headers=_headers)  # NOQA
+                    if req.status_code == 401:
+                        self.log.info('401 error: Unauthorized request. Invalid username or password.')  # NOQA
+                        print '401 error: Unauthorized request. Invalid username or password.'  # NOQA
+                        sys.exit(1)
+                    elif req.status_code == 200:
+                        req = req.json()['mobile_devices']
+                        # Make a unique list
+                        models = list(set([x['model_identifier'] for x in req]))  # NOQA
+                        if models:
+                            return models
+                        else:
+                            self.log.info('No models found in MDM.')
+                            return None
+                except Exception as e:
+                    self.log.debug('Jamf Exception: %s' % e)
+                    pass
+
+        def simplemdm(auth_token):
+            # No URL required as an argument as SimpleMDM is cloud only
+            mdm_url = 'https://a.simplemdm.com/api/v1/devices'
+            try:
+                req = requests.get(mdm_url, auth=(auth_token, ""), headers=_headers).json()  # NOQA
+                if req['errors']:
+                    print req['errors'][0]['title']
+                    self.log.info(req['errors'][0]['title'])
+                    sys.exit(1)
+                else:
+                    req = req['data']  # NOQA
+                    self.log.info('Requesting models from: %s' % mdm_url)
+                    # Make a unique list
+                    models = list(set([x['attributes']['product_name'] for x in req]))  # NOQA
+                    if models:
+                        return models
+                    else:
+                        self.log.info('No models found in MDM.')
+                        return None
+            except Exception as e:
+                self.log.debug('SimpleMDM Exception: %s' % e)
+                pass
+
+        if not mdm:
+            try:
+                mdm = self.configuration['mdm']
+            except:
+                self.log.info('MDM not found in configuration file. Please specify.')  # NOQA
+                print 'MDM not found in configuration file. Please specify.'
+                sys.exit(1)
+        elif mdm:
+            self.log.info('Specified MDM is: %s' % mdm)
+            if 'simplemdm' in mdm:
+                if mdm_token:
+                    try:
+                        return simplemdm(mdm_token)
+                    except:
+                        raise
+                else:
+                    print 'Must provide auth token for SimpleMDM.'
+                    self.log.info('Must provide auth token for SimpleMDM.')
+                    sys.exit(1)
+            elif 'jss' in mdm or 'jamf' in mdm:
+                if mdm_url and mdm_user and mdm_pass:  # NOQA
+                    try:
+                        return jamf(mdm_url, mdm_user, mdm_pass)
+                    except:
+                        raise
+                else:
+                    print 'Must provide Jamf MDM server URL, username, and password.'  # NOQA
+                    self.log.info('Must provide Jamf MDM server URL, username, and password.')  # NOQA
+                    sys.exit(1)
+            else:
+                print 'Must specify MDM. Choose either \'simplemdm\' or \'jamf\'.'  # NOQA
+                self.log.info('Must specify MDM. Choose either \'simplemdm\' or \'jamf\'.')  # NOQA
+                sys.exit(1)
 
     def read_feed(self, url):
         '''Reads any of the Apple XML/plist feeds required for software updates or
         iOS updates'''
-        return readPlist(self.request_url(url))
+        return readPlistFromString(requests.get(url, headers={'user-agent': self.user_agent}, timeout=10).text)  # NOQA
 
     def reformat_url(self, url):
         '''Formats the URL into the format required by the caching service:
@@ -704,7 +813,7 @@ class PreCache():
         if 'Watch' not in device_model:
             url = 'https://api.ipsw.me/v2.1/%s/latest/info.json' % device_model
             try:
-                ipsw_json = json.loads(self.request_url(url).read())[0]
+                ipsw_json = requests.get(url, headers={'user-agent': self.user_agent}, timeout=10).json()[0]  # NOQA
 
                 try:
                     rel_date = ipsw_json['releasedate']
@@ -733,16 +842,6 @@ class PreCache():
                 yield asset
             except:
                 pass
-
-    def request_url(self, url):
-        '''Attempts a request to a specific URL'''
-        try:
-            req = urllib2.Request(url)
-            req.add_unredirected_header('User-Agent', self.user_agent)
-            req = urllib2.urlopen(req)
-            return req
-        except:
-            raise
 
     def software_updates(self):
         '''Returns a generator object with all the software updates
@@ -934,6 +1033,7 @@ def main():
     # Used in the choices options for groups to cache
     asset_groups = ['AppleTV', 'iPad', 'iPhone', 'iPod', 'Watch', 'app', 'installer', 'sucatalog']  # NOQA
     apps = ['Keynote', 'Xcode', 'iMovie', 'MainStage', 'Server', 'Sierra', 'Numbers', 'ElCapitan', 'GarageBand', 'FinalCutPro', 'LogicProX', 'Pages']  # NOQA
+    supported_mdm = ['jamf', 'simplemdm']
 
     # All the args!
     parser.add_argument('--apps',
@@ -978,15 +1078,26 @@ def main():
                         help='Cache IPSW for provided model/s.',
                         required=False)
 
+    parser.add_argument('--mdm',
+                        type=str,
+                        nargs=1,
+                        dest='mdm',
+                        choices=(supported_mdm),
+                        metavar='mdm',
+                        help='Specify which MDM to use.',  # NOQA
+                        required=False)
+
     parser.add_argument('--mdm-server',
                         type=str,
+                        nargs=1,
                         dest='mdm_server',
                         metavar='server',
-                        help='MDM server address. Only JAMFCloud/JSS supported at present.',  # NOQA
+                        help='MDM server address.',  # NOQA
                         required=False)
 
     parser.add_argument('--mdm-user',
                         type=str,
+                        nargs=1,
                         dest='mdm_user',
                         metavar='username',
                         help='MDM username',
@@ -994,9 +1105,18 @@ def main():
 
     parser.add_argument('--mdm-password',
                         type=str,
+                        nargs=1,
                         dest='mdm_password',
                         metavar='password',
                         help='MDM password',
+                        required=False)
+
+    parser.add_argument('--mdm-token',
+                        type=str,
+                        nargs=1,
+                        dest='mdm_token',
+                        metavar='token',
+                        help='MDM token',
                         required=False)
 
     parser.add_argument('-l', '--list',
@@ -1038,7 +1158,7 @@ def main():
 
     # If no arguments are supplied, initialise and run with best effort to detect configuration and caching server  # NOQA
     if len(sys.argv) == 1:
-        p = PreCache()
+        p = PreCache(use_config=True)
         p.main_processor()
     # If arguments are supplied, process them.
     elif len(sys.argv) > 1:
@@ -1090,30 +1210,72 @@ def main():
                 else:
                     _mac_updates = None
 
-                if args.models and not args.mdm_server:
-                    _models = args.models
+                # Init class here so we can use p.mdm_models later.
+                p = PreCache(server=_cache_server, destination=_destination, dry_run=_dry_run)  # NOQA
+
+                # Continue processing args.
+                if args.models:
+                    if args.mdm:
+                        print 'MDM argument not supported with models argument.'  # NOQA
+                        sys.exit(1)
+                    else:
+                        _models = args.models
                 else:
                     _models = None
 
                 # If any details have been provided
-                if not args.models and args.mdm_server:
-                    _mdm_server = args.mdm_server[0]
+                if args.mdm:
+                    if args.models:
+                        print 'Models argument not supported with MDM argument.'  # NOQA
+                        sys.exit(1)
+                    else:
+                        if args.mdm:
+                            _mdm = args.mdm[0]
+                        else:
+                            _mdm = None
+
+                    if args.mdm_server:
+                        if 'jamf' in args.mdm:
+                            _mdm_server = args.mdm_server[0]
+                        else:
+                            print 'MDM server URL not required.'
+                            sys.exit(1)
+                    else:
+                        _mdm_server = None
 
                     if args.mdm_user:
-                        _mdm_user = args.mdm_user[0]
+                        if 'jamf' in args.mdm:
+                            _mdm_user = args.mdm_user[0]
+                        else:
+                            print 'MDM username not required.'
+                            sys.exit(1)
                     else:
                         _mdm_user = None
 
                     if args.mdm_password:
-                        _mdm_pass = args.mdm_password[0]
+                        if 'jamf' in args.mdm:
+                            _mdm_pass = args.mdm_password[0]
+                        else:
+                            print 'MDM password not required.'
+                            sys.exit(1)
                     else:
                         _mdm_pass = None
 
-                    _models = p.mdm_models(mdm_server=_mdm_server, mdm_user=_mdm_user, mdm_pass=_mdm_pass)  # NOQA
+                    if args.mdm_token:
+                        if 'jamf' in args.mdm:
+                            print 'Jamf requires username and password authentication.'  # NOQA
+                            sys.exit(1)
+                        else:
+                            _mdm_token = args.mdm_token[0]
+                    else:
+                        _mdm_token = None
+
+                    # Avengers assemble! Well, just models anyways.
+                    _models = p.mdm_models(mdm=_mdm, mdm_url=_mdm_server, mdm_user=_mdm_user, mdm_pass=_mdm_pass, mdm_token=_mdm_token)  # NOQA
                 else:
                     _models = None
 
-                p = PreCache(server=_cache_server, destination=_destination, dry_run=_dry_run)  # NOQA
+                # Call the main processor method to actually do the caching
                 p.main_processor(apps=_apps, groups=_groups, ipsw=_ipsw_models, mac_updates=_mac_updates, models=_models)  # NOQA
 
 

@@ -26,9 +26,9 @@
 	<key>cacheServerConfigPlist</key>
 	<string>/Library/Server/Caching/Config/Config.plist</string>
 	<key>cacheServerPort</key>
-	<string>49672</string>
+	<string>53612</string>
 	<key>cacheServerURL</key>
-	<string>http://thor</string>
+	<string>http://cacheserver</string>
 	<key>destination</key>
 	<string>/tmp</string>
 	<key>iosBaseURL</key>
@@ -48,6 +48,8 @@
 	<string>/tmp/precache.log</string>
 	<key>masBaseURL</key>
 	<string>http://osxapps.itunes.apple.com/</string>
+	<key>mdm</key>
+	<string>jamf</string>
 	<key>mdmPassword</key>
 	<string>aPassword</string>
 	<key>mdmServer</key>
