@@ -703,7 +703,7 @@ class PreCache():
         }
 
         # MDM methods as API calls differ
-        def jamf(mdm_url, username, password):
+        def jamf(mdm_url=None, username=None, password=None):
             '''Returns models from Jamf based MDM.
             Hosted Jamf URL example:
                 https://precache.jamfcloud.com
@@ -712,6 +712,33 @@ class PreCache():
             '''
             # Default response is XML, change to JSON
             _headers['Accept'] = 'application/json'
+
+            # Try and load from configuration file.
+            if not mdm_url:
+                try:
+                    mdm_url = self.configuration['mdmServer']
+                except:
+                    self.log.info('Could not load MDM server from configuration file')  # NOQA
+                    print 'Could not load MDM server from configuration file'  # NOQA
+                    sys.exit(1)
+
+            # Try and load from configuration file.
+            if not username:
+                try:
+                    username = self.configuration['mdmUser']
+                except:
+                    self.log.info('Could not load MDM username from configuration file')  # NOQA
+                    print 'Could not load MDM username from configuration file'  # NOQA
+                    sys.exit(1)
+
+            # Try and load from configuration file.
+            if not password:
+                try:
+                    password = self.configuration['mdmPassword']
+                except:
+                    self.log.info('Could not load MDM password from configuration file')  # NOQA
+                    print 'Could not load MDM password from configuration file'  # NOQA
+                    sys.exit(1)
 
             if mdm_url.startswith('https://'):
                 # Strips trailing slash and joins the JSSresources API path
@@ -738,9 +765,19 @@ class PreCache():
                     self.log.debug('Jamf Exception: %s' % e)
                     pass
 
-        def simplemdm(auth_token):
+        def simplemdm(auth_token=None):
             # No URL required as an argument as SimpleMDM is cloud only
             mdm_url = 'https://a.simplemdm.com/api/v1/devices'
+
+            # Try and load from configuration file.
+            if not auth_token:
+                try:
+                    auth_token = self.configuration['mdmToken']
+                except:
+                    self.log.info('Could not load MDM token from configuration file.')  # NOQA
+                    print 'Could not load MDM token from configuration file.'  # NOQA
+                    sys.exit(1)
+
             try:
                 req = requests.get(mdm_url, auth=(auth_token, ""), headers=_headers).json()  # NOQA
                 if req['errors']:
