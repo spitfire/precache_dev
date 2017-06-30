@@ -142,7 +142,7 @@ class PreCache():
         '''Checks if an item is already cached. This is indicated in the
         headers of the file being checked.'''
         try:
-            req = requests.get(asset_url, headers={'user-agent': self.user_agent}, timeout=10)  # NOQA
+            req = requests.head(asset_url, headers={'user-agent': self.user_agent})  # NOQA
             if req.headers.get('Content-Type') is not None:
                 # Item is not in cache
                 self.log.debug('Not in cache: %s' % asset_url)

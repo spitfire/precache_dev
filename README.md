@@ -1,6 +1,11 @@
 # precache - development only
 This is the development repo for `precache.py`. Do not use in production!
 
+## Release notes - v2.0.2
+- Implemented correct usage of `requests.head` to speed up the `already_cached()` function.
+- Logging implemented. Logs to `/tmp/precache.log`.
+
+
 ## Release notes - v2.0.1
 - Implemented switch over to the `requests` module for python. You will be prompted to install this if it isn't importable.
 - Implemented Jamf/JSS and SimpleMDM as sources for MDM. See the `mdm` key in the User configurable options section below.
